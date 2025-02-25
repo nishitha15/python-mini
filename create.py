@@ -1,32 +1,22 @@
-import os
-from socrata.authorization import Authorization
-from socrata import Socrata
-import sys
-import time
-import argparse
+from socrata.operations.utils import get_filename
+from socrata.operations.operation import Operation
 
-parser = argparse.ArgumentParser(description='Create a dataset.')
-parser.add_argument('name', type=str, help='Name of your dataset')
-parser.add_argument('csv', type=str, help='Path to the CSV')
-parser.add_argument('domain', type=str, help='Your Socrata domain')
-parser.add_argument('--username', type=str, help='Your Socrata username', default = os.environ.get('SOCRATA_USERNAME', None))
-parser.add_argument('--password', type=str, help='Your Socrata password', default = os.environ.get('SOCRATA_PASSWORD', None))
-args = parser.parse_args()
+class Create(Operation):
 
-auth = Authorization(
-  args.domain,
-  args.username,
-  args.password
-)
+    def set_deleted_at(self, date):
+        """
+        :param date: should have datetime type
+        :return: self Create class
+        """
+        self._deleted_at = date
+        return self
 
-def create(name, filepath):
-    socrata = Socrata(auth)
-    with open(filepath, 'rb') as csv_file:
-        (revision, output) = socrata.create(
-            name = name
-        ).csv(csv_file)
-
-        job = revision.apply(output_schema = output)
-        revision.open_in_browser()
-
-create(args.name, args.csv)
+    def run(self, data, put_bytes, filename = None):
+        filename = get_filename(data, filename)
+        optional_deleted_at = self._deleted_at if hasattr(self, '_deleted_at') else None
+        rev = self.publish.new(self.properties['metadata'], optional_deleted_at)
+        source = rev.create_upload(filename)
+        source = put_bytes(source)
+        output_schema = source.get_latest_input_schema().get_latest_output_schema()
+        output_schema = output_schema.wait_for_finish()
+        return (rev, output_schema)
